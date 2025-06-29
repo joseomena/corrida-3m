@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Corrida das 3M</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Poppins', sans-serif;
+            overflow: hidden;
+        }
+        .board-container {
+            width: 100%;
+            padding-top: 70.7%; /* Proporção da imagem do tabuleiro (ex: 800/1130) */
+            position: relative;
+        }
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        .modal {
+            transition: opacity 0.3s ease, transform 0.3s ease;
+        }
+        .modal-hidden {
+            opacity: 0;
+            transform: scale(0.9);
+            pointer-events: none;
+        }
+        .pawn {
+            position: absolute;
+            width: 3%; /* Tamanho do pino em relação ao tabuleiro */
+            height: 4.5%;
+            transition: top 0.5s ease-in-out, left 0.5s ease-in-out;
+            background-size: contain;
+            background-repeat: no-repeat;
+        }
+        .pawn-1 {
+            background-image: url('https://i.imgur.com/qL3gL3O.png'); /* Pino Azul */
+        }
+        .pawn-2 {
+            background-image: url('https://i.imgur.com/c4xJ8V8.png'); /* Pino Vermelho */
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+
+    <div class="w-full max-w-5xl mx-auto p-4">
+        <div class="bg-white rounded-2xl shadow-2xl p-6">
+            <h1 class="text-3xl font-bold text-center text-gray-800 mb-4">Corrida das 3M</h1>
+            
+            <!-- Container do Tabuleiro -->
+            <div id="board-container" class="board-container rounded-lg overflow-hidden shadow-lg">
+                <canvas id="gameCanvas"></canvas>
+                 <!-- Pinos dos Jogadores -->
+                <div id="pawn1" class="pawn pawn-1"></div>
+                <div id="pawn2" class="pawn pawn-2"></div>
+            </div>
+
+            <!-- Painel de Controles -->
+            <div class="mt-6 flex flex-col md:flex-row items-center justify-between gap-4">
+                <div id="player-turn" class="text-xl font-semibold bg-gray-200 px-4 py-2 rounded-lg">
+                    Vez do Jogador 1
+                </div>
+                <div class="flex items-center gap-4">
+                    <img id="dice-image" src="https://i.imgur.com/f08O0tI.png" alt="Dado" class="w-16 h-16">
+                    <button id="roll-dice-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow-md transition-transform transform hover:scale-105">
+                        Lançar o Dado
+                    </button>
+                </div>
+                <div id="game-message" class="text-lg font-medium text-green-600 h-8"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Perguntas -->
+    <div id="question-modal" class="modal modal-hidden fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl p-8">
+            <div id="question-color-banner" class="w-full h-4 rounded-t-lg mb-4"></div>
+            <h2 id="question-text" class="text-2xl font-bold text-gray-800 mb-6">Texto da pergunta aqui...</h2>
+            <div id="options-container" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Opções serão inseridas aqui via JS -->
+            </div>
+            <div id="feedback-container" class="mt-6 text-2xl font-bold text-center h-10"></div>
+        </div>
+    </div>
+
+
+    <script>
+        // --- CONFIGURAÇÃO INICIAL E ASSETS ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const boardContainer = document.getElementById('board-container');
+
+        // URL da imagem do tabuleiro. Substitua se tiver uma imagem de melhor qualidade.
+        const boardImageUrl = 'https://i.imgur.com/c0LPhJc.jpeg';
+        const boardImage = new Image();
+        boardImage.src = boardImageUrl;
+
+        boardImage.onload = () => {
+            // Ajusta o tamanho do canvas para o tamanho da imagem carregada
+            canvas.width = boardImage.width;
+            canvas.height = boardImage.height;
+            ctx.drawImage(boardImage, 0, 0, canvas.width, canvas.height);
+        };
+
+        const pawn1 = document.getElementById('pawn1');
+        const pawn2 = document.getElementById('pawn2');
+        const playerTurnEl = document.getElementById('player-turn');
+        const gameMessageEl = document.getElementById('game-message');
+        const rollDiceBtn = document.getElementById('roll-dice-btn');
+        const diceImage = document.getElementById('dice-image');
+        
+        const questionModal = document.getElementById('question-modal');
+        const questionColorBanner = document.getElementById('question-color-banner');
+        const questionTextEl = document.getElementById('question-text');
+        const optionsContainer = document.getElementById('options-container');
+        const feedbackContainer = document.getElementById('feedback-container');
+
+        const diceFaces = [
+            'https://i.imgur.com/f08O0tI.png', // Face 1
+            'https://i.imgur.com/Kz4J4N1.png', // Face 2
+            'https://i.imgur.com/G5V2x2G.png', // Face 3
+            'https://i.imgur.com/7gB27nK.png', // Face 4
+            'https://i.imgur.com/Y32y5rV.png', // Face 5
+            'https://i.imgur.com/sE5d9xL.png'  // Face 6
+        ];
+
+        // --- ESTRUTURA DE DADOS DO JOGO ---
+        const questions = {
+            vermelho: [ // Média
+                { q: "Qual é a média aritmética dos números 12, 18, 24, e 36?", o: ["20", "22.5", "25", "27"], a: 3 },
+                { q: "Em uma sala com 5 alunos, as notas de uma prova foram: 6, 7, 8, 9 e 10. Qual é a média das notas?", o: ["7.5", "8", "8.5", "9"], a: 1 },
+                { q: "Um professor calcula a média das notas de 4 alunos: 7, 8, 9 e x. Sabendo que a média foi 8.5, qual é o valor de x?", o: ["7", "8", "9", "10"], a: 3 },
+                { q: "Um atleta correu 16 km em uma hora no primeiro treino e 14 km em uma hora no segundo. Qual foi a média da velocidade (em km/h)?", o: ["13", "14", "15", "16"], a: 2 },
+                { q: "Em uma empresa, o salário médio dos 10 funcionários é R$ 1.900. Se um novo funcionário for contratado com salário de R$ 3.000, qual será a nova média?", o: ["R$ 2.000", "R$ 2.100", "R$ 2.200", "R$ 2.300"], a: 0 },
+                { q: "A média das idades de uma família de 4 pessoas é 25 anos. Se um novo membro com 30 anos se juntar, qual será a nova média?", o: ["26", "27", "28", "29"], a: 0 },
+            ],
+            azul: [ // Mediana
+                { q: "Qual é a mediana do conjunto: 1, 3, 5, 7, 9, 11, 13?", o: ["7", "9", "11", "13"], a: 0 },
+                { q: "Qual é a mediana do conjunto: 7, 8, 9, 10, 11, 12?", o: ["8.5", "9", "9.5", "10"], a: 2 },
+                { q: "Uma amostra de temperaturas foi registrada em graus Celsius: 20, 22, 24, 26, 28, 30. Qual é a mediana?", o: ["22", "23", "24", "25"], a: 3 },
+                { q: "No conjunto: 100, 105, 110, 115, 120, 125, qual será a mediana após adicionar o número 130?", o: ["115", "117.5", "120", "122.5"], a: 0 },
+                { q: "Em uma pesquisa, as distâncias percorridas foram: 12 km, 14 km, 18 km, 20 km, 20 km, 22 km. Qual é a mediana?", o: ["16 km", "18 km", "20 km", "19 km"], a: 3 },
+                { q: "Qual é a mediana do conjunto: 15, 18, 20, 22, 25, 28?", o: ["20", "21", "22", "23"], a: 1 },
+            ],
+            amarelo: [ // Moda
+                { q: "Qual é a moda do conjunto: 3, 5, 5, 7, 9, 9, 9, 11?", o: ["5", "7", "9", "5 e 9"], a: 2 },
+                { q: "Qual é a moda do conjunto: 1, 2, 3, 4, 5, 6?", o: ["1", "3", "5", "Não há moda"], a: 3 },
+                { q: "Em uma pesquisa sobre preferências de frutas, as respostas foram: maçã, banana, banana, banana, laranja, maçã, maçã. Qual é a moda?", o: ["Banana", "Laranja", "Maçã", "Maçã e banana"], a: 0 },
+                { q: "Qual conjunto de dados abaixo possui mais de uma moda?", o: ["2, 3, 4, 5, 6", "1, 1, 2, 2, 3", "7, 8, 9, 10, 10", "5, 6, 7, 8, 9"], a: 1 },
+                { q: "Qual é a moda do conjunto: 4, 5, 7, 8, 8, 9, 10, 10?", o: ["7", "8", "10", "8 e 10"], a: 3 },
+                { q: "Em uma pesquisa, 10 pessoas responderam a quantidade de livros lidos no ano: 0, 1, 1, 2, 3, 3, 3, 4, 5, 5. Qual é a moda?", o: ["1", "3", "4", "5"], a: 1 },
+            ]
+        };
+        
+        // Coordenadas (em %) das casas no tabuleiro. [0] é o início.
+        const boardPath = [
+            { x: 4, y: 88, type: 'start' },     // Início
+            { x: 13, y: 88, type: 'normal' },   // 1
+            { x: 22, y: 88, type: 'vermelho' }, // 2
+            { x: 31, y: 88, type: 'azul' },     // 3
+            { x: 39, y: 84, type: 'especial', action: 'move', value: 2 }, // 4 (+2)
+            { x: 40, y: 74, type: 'amarelo' },  // 5
+            { x: 40, y: 64, type: 'vermelho' }, // 6
+            { x: 48, y: 60, type: 'normal' },   // 7
+            { x: 57, y: 60, type: 'azul' },     // 8
+            { x: 66, y: 60, type: 'especial', action: 'move', value: -3 }, // 9 (-3)
+            { x: 75, y: 60, type: 'amarelo' },  // 10
+            { x: 84, y: 56, type: 'multicolor' }, // 11
+            { x: 84, y: 46, type: 'vermelho' }, // 12
+            { x: 84, y: 36, type: 'especial', action: 'reroll' }, // 13 (Jogue Novamente)
+            { x: 75, y: 32, type: 'azul' },     // 14
+            { x: 66, y: 32, type: 'normal' },   // 15
+            { x: 57, y: 32, type: 'amarelo' },  // 16
+            { x: 48, y: 28, type: 'especial', action: 'move', value: 5 }, // 17 (+5)
+            { x: 40, y: 28, type: 'vermelho' }, // 18
+            { x: 31, y: 28, type: 'azul' },     // 19
+            { x: 22, y: 24, type: 'multicolor' }, // 20
+            { x: 22, y: 14, type: 'amarelo' },  // 21
+            { x: 22, y: 5, type: 'especial', action: 'swap' }, // 22 (Troque de lugar)
+            { x: 31, y: 5, type: 'vermelho' }, // 23
+            { x: 40, y: 5, type: 'azul' },     // 24
+            { x: 49, y: 9, type: 'normal' },    // 25
+            { x: 58, y: 9, type: 'especial', action: 'move', value: -2 }, // 26 (-2)
+            { x: 67, y: 9, type: 'amarelo' },  // 27
+            { x: 76, y: 13, type: 'multicolor' }, // 28
+            { x: 76, y: 23, type: 'especial', action: 'miss' }, // 29 (1 rodada sem jogar)
+            { x: 67, y: 23, type: 'vermelho' },// 30
+            { x: 58, y: 45, type: 'especial', action: 'move', value: -4 }, // 31 (-4)
+            { x: 49, y: 45, type: 'azul' },    // 32
+            { x: 40, y: 45, type: 'amarelo' }, // 33
+            { x: 31, y: 49, type: 'vermelho' },// 34
+            { x: 22, y: 49, type: 'azul' },    // 35
+            { x: 13, y: 45, type: 'normal' },  // 36
+            { x: 13, y: 35, type: 'amarelo' }, // 37
+            { x: 13, y: 25, type: 'multicolor' },// 38
+            { x: 13, y: 15, type: 'end' }, // FIM
+        ];
+        
+        // --- ESTADO DO JOGO ---
+        let gameState = {
+            players: [
+                { id: 1, position: 0, pawnEl: pawn1, missTurn: false },
+                { id: 2, position: 0, pawnEl: pawn2, missTurn: false }
+            ],
+            currentPlayerIndex: 0,
+            diceResult: 0,
+            isMoving: false,
+            isAnswering: false,
+        };
+
+        // --- FUNÇÕES PRINCIPAIS DO JOGO ---
+
+        function updatePawnPosition(player) {
+            const path = boardPath[player.position];
+            if (!path) return;
+            // Ajuste fino para os pinos não ficarem exatamente um sobre o outro
+            const offsetX = player.id === 1 ? -1.5 : 1.5;
+            player.pawnEl.style.left = `calc(${path.x + offsetX}% - ${player.pawnEl.offsetWidth / 2}px)`;
+            player.pawnEl.style.top = `calc(${path.y}% - ${player.pawnEl.offsetHeight / 2}px)`;
+        }
+
+        function updateAllPawnPositions() {
+            gameState.players.forEach(updatePawnPosition);
+        }
+
+        function switchPlayer() {
+            gameState.currentPlayerIndex = (gameState.currentPlayerIndex + 1) % gameState.players.length;
+            const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+            
+            playerTurnEl.textContent = `Vez do Jogador ${currentPlayer.id}`;
+            rollDiceBtn.disabled = false;
+            gameState.isMoving = false;
+            gameMessageEl.textContent = '';
+            
+            if (currentPlayer.missTurn) {
+                currentPlayer.missTurn = false;
+                gameMessageEl.textContent = `Jogador ${currentPlayer.id} perdeu a vez!`;
+                setTimeout(switchPlayer, 1500);
+            }
+        }
+
+        function handleRollDice() {
+            if (gameState.isMoving || gameState.isAnswering) return;
+
+            rollDiceBtn.disabled = true;
+            gameState.isMoving = true;
+            gameState.diceResult = Math.floor(Math.random() * 6) + 1;
+            
+            // Animação do dado
+            let animCount = 0;
+            const animInterval = setInterval(() => {
+                diceImage.src = diceFaces[Math.floor(Math.random() * 6)];
+                animCount++;
+                if (animCount > 10) {
+                    clearInterval(animInterval);
+                    diceImage.src = diceFaces[gameState.diceResult - 1];
+                    movePlayer();
+                }
+            }, 100);
+        }
+
+        function movePlayer(steps = gameState.diceResult) {
+            const player = gameState.players[gameState.currentPlayerIndex];
+            const previousPosition = player.position;
+            let targetPosition = Math.min(player.position + steps, boardPath.length - 1);
+            
+            player.position = targetPosition;
+            updatePawnPosition(player);
+
+            setTimeout(() => {
+                handleLandedOnSpace(player, previousPosition);
+            }, 600); // Espera a animação do pino terminar
+        }
+        
+        function movePlayerTo(player, position, isPenalty = false) {
+             let targetPosition = Math.max(0, position);
+             player.position = targetPosition;
+             updatePawnPosition(player);
+             
+             if(!isPenalty){
+                 setTimeout(() => {
+                    handleLandedOnSpace(player, player.position);
+                 }, 600);
+             }
+        }
+
+        function handleLandedOnSpace(player, previousPosition) {
+            const space = boardPath[player.position];
+            if (!space) return;
+
+            if (space.type === 'end') {
+                endGame(player);
+                return;
+            }
+
+            if (space.type === 'vermelho' || space.type === 'azul' || space.type === 'amarelo') {
+                askQuestion(space.type, player, previousPosition);
+            } else if (space.type === 'multicolor') {
+                const roll = Math.floor(Math.random() * 6) + 1;
+                let color;
+                if(roll <= 2) color = 'amarelo';
+                else if (roll <= 4) color = 'azul';
+                else color = 'vermelho';
+                gameMessageEl.textContent = `Casa multicolor! Pergunta ${color}.`;
+                askQuestion(color, player, previousPosition);
+            } else if (space.type === 'especial') {
+                handleSpecialSpace(space, player);
+            } else {
+                switchPlayer();
+            }
+        }
+        
+        function handleSpecialSpace(space, player) {
+            gameMessageEl.textContent = `Casa especial: ${space.action}`;
+            switch(space.action) {
+                case 'move':
+                    if (space.value > 0) {
+                        gameMessageEl.textContent = `Avance ${space.value} casas!`;
+                        movePlayerTo(player, player.position + space.value);
+                    } else {
+                        gameMessageEl.textContent = `Volte ${Math.abs(space.value)} casas!`;
+                        movePlayerTo(player, player.position + space.value, true);
+                        setTimeout(switchPlayer, 1500);
+                    }
+                    break;
+                case 'reroll':
+                    gameMessageEl.textContent = 'Jogue novamente!';
+                    rollDiceBtn.disabled = false;
+                    gameState.isMoving = false;
+                    break;
+                case 'miss':
+                     gameMessageEl.textContent = 'Você perde a próxima rodada!';
+                     player.missTurn = true;
+                     setTimeout(switchPlayer, 1500);
+                     break;
+                case 'swap':
+                    gameMessageEl.textContent = 'Troque de lugar com o outro jogador!';
+                    const otherPlayerIndex = (gameState.currentPlayerIndex + 1) % gameState.players.length;
+                    const otherPlayer = gameState.players[otherPlayerIndex];
+                    const p1_pos = player.position;
+                    const p2_pos = otherPlayer.position;
+                    movePlayerTo(player, p2_pos, true);
+                    movePlayerTo(otherPlayer, p1_pos, true);
+                    setTimeout(switchPlayer, 1500);
+                    break;
+            }
+        }
+
+
+        function askQuestion(color, player, previousPosition) {
+            gameState.isAnswering = true;
+            const questionPool = questions[color];
+            const question = questionPool[Math.floor(Math.random() * questionPool.length)];
+
+            questionTextEl.textContent = question.q;
+            optionsContainer.innerHTML = '';
+            feedbackContainer.innerHTML = '';
+            
+            const colors = {vermelho: 'bg-red-500', azul: 'bg-blue-500', amarelo: 'bg-yellow-400'};
+            questionColorBanner.className = `w-full h-4 rounded-t-lg mb-4 ${colors[color]}`;
+
+            question.o.forEach((optionText, index) => {
+                const button = document.createElement('button');
+                button.textContent = optionText;
+                button.className = 'w-full text-left p-4 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors';
+                button.onclick = () => checkAnswer(index, question.a, player, previousPosition, button);
+                optionsContainer.appendChild(button);
+            });
+            
+            questionModal.classList.remove('modal-hidden');
+        }
+        
+        function checkAnswer(selectedIndex, correctIndex, player, previousPosition, button) {
+            // Desabilita todos os botões após uma resposta
+            Array.from(optionsContainer.children).forEach(btn => btn.disabled = true);
+            
+            if(selectedIndex === correctIndex) {
+                feedbackContainer.textContent = "Correto!";
+                feedbackContainer.className = "mt-6 text-2xl font-bold text-center h-10 text-green-600";
+                button.classList.remove('bg-gray-200');
+                button.classList.add('bg-green-500', 'text-white');
+                setTimeout(() => {
+                    questionModal.classList.add('modal-hidden');
+                    gameState.isAnswering = false;
+                    switchPlayer();
+                }, 2000);
+            } else {
+                feedbackContainer.textContent = "Errado!";
+                feedbackContainer.className = "mt-6 text-2xl font-bold text-center h-10 text-red-600";
+                button.classList.remove('bg-gray-200');
+                button.classList.add('bg-red-500', 'text-white');
+                // Mostra a resposta correta
+                optionsContainer.children[correctIndex].classList.remove('bg-gray-200');
+                optionsContainer.children[correctIndex].classList.add('bg-green-500', 'text-white');
+                
+                setTimeout(() => {
+                    questionModal.classList.add('modal-hidden');
+                    gameState.isAnswering = false;
+                    movePlayerTo(player, previousPosition, true);
+                    switchPlayer();
+                }, 3000);
+            }
+        }
+        
+        function endGame(winner) {
+            rollDiceBtn.disabled = true;
+            gameMessageEl.textContent = `FIM DE JOGO! Jogador ${winner.id} venceu!`;
+            playerTurnEl.textContent = 'Parabéns!';
+        }
+
+        // --- INICIALIZAÇÃO ---
+        rollDiceBtn.addEventListener('click', handleRollDice);
+        window.addEventListener('resize', updateAllPawnPositions);
+        
+        // Posiciona os pinos na casa inicial quando a página carrega
+        window.onload = () => {
+             // Garante que o tabuleiro seja desenhado primeiro
+            if (boardImage.complete) {
+                canvas.width = boardImage.width;
+                canvas.height = boardImage.height;
+                ctx.drawImage(boardImage, 0, 0, canvas.width, canvas.height);
+            }
+            // Atraso para garantir que os elementos tenham as dimensões corretas
+            setTimeout(updateAllPawnPositions, 100);
+        };
+
+    </script>
+</body>
+</html>
